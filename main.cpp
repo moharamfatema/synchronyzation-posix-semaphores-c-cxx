@@ -5,6 +5,8 @@
 #include <semaphore.h>
 #include <fstream>
 
+#define MAX_SLEEP_TIME 1000
+
 /*assume the longest runtime is 1 second for now*/
 /*we need a timer class*/
 /*assume the longest sleep time is 0.1 millisecond*/
@@ -52,7 +54,19 @@ struct counterArgs{
 void counter(void * argsptr){
     /*extracting arguments*/
     counterArgs * args = (counterArgs *) argsptr;
+    
+    
+    /*go to sleep*/
+    srandom((int)std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    usleep(random()%MAX_SLEEP_TIME);
+    
     /*write to file*/
+    *args->fout 
+        << "Counter Thread "
+        <<args->threadNumber
+        <<" : recieved a message.\n";
+
+    
     *args->fout 
         << "Counter Thread "
         <<args->threadNumber

@@ -2,16 +2,16 @@
 #include <gtest/gtest.h>
 #include <iostream>
 
-TEST(TestUtil,TestTimer){
+/*TEST(TestUtil,TestTimer){
     Timer timer;
     sleep(5);
     float time = timer.getTimeElapsed()/1000; 
     EXPECT_NEAR(time,5,0.1);
-}
+}*/
 
 TEST(TestCounters,TestCounter){
     const std::string outMessage = 
-    "Counter Thread 1 : waiting to write. Counter Thread 1 : now adding to counter, counter value = 1  ";
+    "Counter Thread 1 : recieved a message. Counter Thread 1 : waiting to write. Counter Thread 1 : now adding to counter, counter value = 1  ";
 
     std::string fileOut, str;
     std::ifstream fin;
