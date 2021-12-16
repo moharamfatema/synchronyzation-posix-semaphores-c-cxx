@@ -4,9 +4,13 @@
 #include <chrono>
 #include <semaphore.h>
 #include <fstream>
-#include <iostream>
+
 #define MAX_SLEEP_TIME 1000
-#define MAX_RUN_TIME 1000
+#define MAX_RUN_TIME 100
+#define SIZE_OF_BUFFER 50
+#define NO_OF_COUNTER_THREADS 7
+
+
 
 /*assume the longest runtime is 1 second for now*/
 /*we need a timer class*/
@@ -37,19 +41,29 @@ public:
 /*the parameters passed to a new counter thread*/
 struct counterArgs
 {
-    sem_t *semaphore;
+    sem_t *semaphore, *filesem, *timesem;
     unsigned int *counter;
     std::ofstream *fout;
     unsigned int threadNumber;
     unsigned short *maxTime;
+
 };
 
 struct monitorArgs
 {
-    sem_t *semaphore;
+    sem_t *semaphore, *buffersem, *empty, *full, *filesem, *timesem;
     unsigned int *counter;
     std::ofstream *fout;
     unsigned short *maxTime;
+    std::queue<unsigned int> *buffer;
+};
+
+struct collectorArgs
+{
+    sem_t *buffersem, *full, *empty, *filesem ,*timesem;
+    std::queue<unsigned int> *buffer;
+    unsigned short *maxTime;
+    std::ofstream *fout;
 };
 
 void sleepRandom()
@@ -68,7 +82,11 @@ void *mCounter(void *argsptr)
     unsigned int currentCounterValue;
     std::string msg;
 
-    while (!*args->maxTime)
+    unsigned short flag;
+    sem_wait(args->timesem);
+    flag = *args->maxTime;
+    sem_post(args->timesem);
+    while (!flag)
     {
         /*go to sleep*/
         sleepRandom();
@@ -77,12 +95,16 @@ void *mCounter(void *argsptr)
         msg = "";
         msg = msg.append(
             "Counter Thread " + std::to_string(args->threadNumber) + " : recieved a message.\n");
+        sem_wait(args->filesem);
         *args->fout << msg;
+        sem_post(args->filesem);
 
         msg = "";
         msg = msg.append(
             "Counter Thread " + std::to_string(args->threadNumber) + " : waiting to write.\n");
+        sem_wait(args->filesem);
         *args->fout << msg;
+        sem_post(args->filesem);
 
         sem_wait(args->semaphore);
         /*critical section*/ {
@@ -93,11 +115,20 @@ void *mCounter(void *argsptr)
             msg = msg.append(
                 "Counter Thread " + std::to_string(args->threadNumber) + " : now adding to counter,\n" +
                 "counter value = " + std::to_string(currentCounterValue) + "\n");
-            *args->fout << msg;
         }
 
         sem_post(args->semaphore);
+
+        sem_wait(args->filesem);
+        *args->fout << msg;
+        sem_post(args->filesem);
+
+        sem_wait(args->timesem);
+        flag = *args->maxTime;
+        sem_post(args->timesem);
     }
+    pthread_exit(nullptr);
+
 }
 
 void *mMonitor(void *argsptr)
@@ -108,7 +139,11 @@ void *mMonitor(void *argsptr)
     unsigned int currentCounterValue;
     std::string msg;
 
-    while (!*args->maxTime)
+    unsigned short flag;
+    sem_wait(args->timesem);
+    flag = *args->maxTime;
+    sem_post(args->timesem);
+    while (!flag)
     {
         /*go to sleep*/
         sleepRandom();
@@ -116,9 +151,12 @@ void *mMonitor(void *argsptr)
         /*write to file*/
         msg = "";
         msg = msg.append(
-            "Monitor Thread : waiting to write.\n");
+            "Monitor Thread : waiting to read counter.\n");
+        sem_wait(args->filesem);
         *args->fout << msg;
+        sem_post(args->filesem);
 
+        /*produce*/
         sem_wait(args->semaphore);
         /*critical section*/ {
             /*write to counter args.counter and*/
@@ -127,58 +165,101 @@ void *mMonitor(void *argsptr)
             /*write to file args.fin current value of counter*/
             msg = "";
             msg = msg.append(
-                "Monitor Thread now resetting counter,\nprevious counter value = " + std::to_string(currentCounterValue) + "\n");
-            *args->fout << msg;
+                "Monitor Thread:reading a count value of " + std::to_string(currentCounterValue) + "\n");
         }
 
         sem_post(args->semaphore);
+
+        sem_wait(args->filesem);
+        *args->fout << msg;
+        sem_post(args->filesem);
+
+        /*append to buffer*/
+        sem_wait(args->empty);
+        sem_wait(args->buffersem);
+        args->buffer->push(currentCounterValue);
+        msg = "";
+        msg = msg.append(
+            "Monitor thread: writing to buffer at position" + std::to_string(args->buffer->size() - 1) + "\n");
+        sem_post(args->buffersem);
+        sem_post(args->full);
+
+        sem_wait(args->filesem);
+        *args->fout << msg;
+        sem_post(args->filesem);
+
+        sem_wait(args->timesem);
+        flag = *args->maxTime;
+        sem_post(args->timesem);
+    
+
     }
+    pthread_exit(nullptr);
 }
 
-/*void *mMonitor(void *argsptr)
+void *mCollector(void *argsptr)
 {
-    monitorArgs *args = (monitorArgs *)argsptr;
+    /*extracting arguments*/
+    const collectorArgs *args = (collectorArgs *)argsptr;
 
-    
-    unsigned int counterValue;
-    //std::string msg = "";
-    int n = 0;
-    while (n < 1)
+    unsigned int bufferVal;
+    std::string msg = "";
+
+    unsigned short flag;
+    sem_wait(args->timesem);
+    flag = *args->maxTime;
+    sem_post(args->timesem);
+    while (!flag)
     {
-        n++;
-        /*go to sleep*//*
+        /*go to sleep*/
         sleepRandom();
 
-        *args->fout << "Monitor Thread: waiting to read counter.\n";
-        sem_wait(args->semaphore);
-        /*critical section*//* {
-            counterValue = *args->counter;
-            *args->counter = 0;
-            /*msg = "";
-            msg = msg.append(
-                "Monitor Thread: reading a count value of " +
-                std::to_string(counterValue) +
-                "\n");
-                *//*
-            *args->fout << counterValue;
-        }
-        sem_post(args->semaphore);
+        /*consume*/
+        
+        sem_wait(args->full);
+        sem_wait(args->buffersem);
+        /*critical section*/ {
+            if (!args->buffer->empty())
+            {
+                bufferVal = args->buffer->front();
+                args->buffer->pop();
+                msg = "Collector Thread: reading from the buffer at position 0\n";
+            }
+            else
+            {
+                msg = "Collector Thread: Nothing is in the buffer!\n";
+            }
+        }/*end critical section*/
+        sem_post(args->buffersem);
+        sem_post(args->empty);
+
+        sem_wait(args->filesem);
+        *args->fout << msg;
+        sem_post(args->filesem);
+
+        sem_wait(args->timesem);
+        flag = *args->maxTime;
+        sem_post(args->timesem);
+
     }
-}*/
+    pthread_exit(nullptr);
+
+}
 
 /*create n mCounter threads*/
-pthread_t * createCounters(
-    sem_t * semaphore,
-    unsigned int * counter,
-    std::ofstream * fout,
-    unsigned short * maxTime,
-    const unsigned int n){
+pthread_t *createCounters(
+    sem_t *semaphore,
+    unsigned int *counter,
+    std::ofstream *fout,
+    unsigned short *maxTime,
+    const unsigned int n,
+    sem_t * filesem,
+    sem_t * timesem)
+{
 
-    pthread_t * tid = new pthread_t[n];
+    pthread_t *tid = new pthread_t[n];
 
-    counterArgs * counterArgsArray = new counterArgs[n];
-
-    Timer timer;
+    counterArgs *counterArgsArray = new counterArgs[n];
 
     for (int i = 0; i < n; i++)
     {
@@ -188,6 +269,9 @@ pthread_t * createCounters(
         counterArgsArray[i].semaphore = semaphore;
         counterArgsArray[i].threadNumber = i;
         counterArgsArray[i].maxTime = maxTime;
+        counterArgsArray[i].filesem = filesem;
+        counterArgsArray[i].timesem = timesem;
+
     }
 
     for (int j = 0; j < n; j++)
@@ -200,60 +284,135 @@ pthread_t * createCounters(
 }
 
 pthread_t initMonitor(
-    sem_t * semaphore,
-    unsigned int * counter,
-    std::ofstream * fout,
-    unsigned short * maxTime,
-    std::queue<unsigned int> buffer,
-    sem_t * full,
-    sem_t * empty){
+    sem_t *semaphore,
+    unsigned int *counter,
+    std::ofstream *fout,
+    unsigned short *maxTime,
+    std::queue<unsigned int> *buffer,
+    sem_t *buffersem,
+    sem_t *full,
+    sem_t *empty,
+    sem_t *filesem,
+    sem_t * timesem)
+{
 
     pthread_t tid;
 
-    monitorArgs * args = new monitorArgs;
+    monitorArgs *args = new monitorArgs;
 
-    Timer timer;
+    /*setting the parameters*/
+    args->counter = counter;
+    args->fout = fout;
+    args->semaphore = semaphore;
+    args->maxTime = maxTime;
+    args->buffer = buffer;
+    args->buffersem = buffersem;
+    args->empty = empty;
+    args->full = full;
+    args->filesem = filesem;
+    args->timesem = timesem;
 
+    pthread_create(&tid, nullptr, mMonitor, &args);
 
-        /*setting the parameters*/
-        args->counter = counter;
-        args->fout = fout;
-        args->semaphore = semaphore;
-        args->maxTime = maxTime;
+    return tid;
+}
 
-        pthread_create(&tid, nullptr, mMonitor, &args);
+pthread_t initCollector(
+    sem_t * buffersem,
+    sem_t * full,
+    sem_t * empty,
+    std::queue<unsigned int> *buffer,
+    std::ofstream * fout,
+    unsigned short * maxTime,
+    sem_t * filesem,
+    sem_t * timesem
+)
+{
+    collectorArgs * args= new collectorArgs;
+    pthread_t tid;
+
+    /*setting the parameters*/
+    args->maxTime = maxTime;
+    args->buffer = buffer;
+    args->buffersem = buffersem;
+    args->empty = empty;
+    args->full = full;
+    args->fout = fout;
+    args->filesem = filesem;
+
+    pthread_create(&tid, nullptr, mMonitor, &args);
 
     return tid;
 }
 
 int main()
 {
-    sem_t * semaphore = new sem_t;
+    sem_t *semaphore = new sem_t;
     sem_init(semaphore, 0, 1);
 
-    std::ofstream * fout = new std::ofstream;
+    sem_t *buffersem = new sem_t;
+    sem_init(buffersem, 0, 1);
+
+    sem_t *empty = new sem_t;
+    sem_init(empty, 0, SIZE_OF_BUFFER);
+
+    sem_t *full = new sem_t;
+    sem_init(full, 0, 0);
+
+    sem_t * filesem = new sem_t;
+    sem_init(filesem,0,1);
+
+    sem_t * timesem = new sem_t;
+    sem_init(timesem,0,1);
+
+    std::ofstream *fout = new std::ofstream;
     fout->open("out.txt");
 
-    unsigned int * count = new unsigned int;
+    unsigned int *count = new unsigned int;
     *count = 0;
 
-    unsigned short * maxTime = new unsigned short;
-    * maxTime = 0;
+    unsigned short *maxTime = new unsigned short;
+    *maxTime = 0;
+
     Timer timer;
 
-    initMonitor   (semaphore, count, fout, maxTime);
+    std::queue<unsigned int> *buffer = new std::queue<unsigned int>;
 
-    //createCounters(semaphore, count, fout, maxTime, 1);
+    pthread_t * counterTid  = new pthread_t[NO_OF_COUNTER_THREADS];
+    counterTid = createCounters(semaphore, count, fout, maxTime, NO_OF_COUNTER_THREADS,filesem, timesem);
 
-    while (timer.getTimeElapsed() < MAX_RUN_TIME)
-        * maxTime = 0;
-    * maxTime = 1;
+    pthread_t monitorTid = initMonitor   (semaphore, count, fout, maxTime, buffer, buffersem, full, empty, filesem, timesem);
 
-    //fout->close();
-    //mout->close();
+    //pthread_t collectorTid = initCollector (buffersem, full, empty, buffer, fout, maxTime, filesem, timesem);
+
+    /*monitor the running time*/
+    while (timer.getTimeElapsed() < MAX_RUN_TIME);
+    sem_wait(timesem);
+    *maxTime = 1;
+    sem_post(timesem);
+
+    /*join threads*/
+    for(int i = 0; i < NO_OF_COUNTER_THREADS; i++){
+        pthread_join(counterTid[i],0);
+    }
+    pthread_join(monitorTid,0);
+    //pthread_join(collectorTid,0);
+
+    /*cleanup*/
+    fout->close();
+
     sem_destroy(semaphore);
-    
-    /*delete fout; delete mout; delete maxTime; delete count;*/
+    sem_destroy(buffersem);
+    sem_destroy(full);
+    sem_destroy(empty);
+    sem_destroy(filesem);
+    sem_destroy(timesem);
+
+    delete fout;
+    delete maxTime;
+    delete count;
+    delete buffer;
+    delete[] counterTid;
 
     return 0;
 }
