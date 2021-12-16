@@ -9,3 +9,5 @@ Makefile
 runTests
 main
 out.txt
+out2.txt
+mout.txt
