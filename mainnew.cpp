@@ -5,14 +5,11 @@
 #include <semaphore.h>
 #include <fstream>
 
-#define MAX_SLEEP_TIME 10
-#define MAX_RUN_TIME 100
-#define SIZE_OF_BUFFER 50
-#define NO_OF_COUNTER_THREADS 1
+#define MAX_SLEEP_TIME 100
+#define MAX_RUN_TIME 300
+#define SIZE_OF_BUFFER 10
+#define NO_OF_COUNTER_THREADS 3
 
-/*assume the longest runtime is 1 second for now*/
-/*we need a timer class*/
-/*assume the longest sleep time is 10 millisecond*/
 
 /*to time any function*/
 class Timer
@@ -47,10 +44,9 @@ class MCounters
 {
 
 public:
-    static sem_t semaphore, filesem, timesem;
+    static sem_t semaphore, filesem;
     static unsigned int *counter;
     static std::ofstream *fout;
-    static unsigned short *maxTime;
     static pthread_t mCountertidArray[NO_OF_COUNTER_THREADS];
 
     static void init()
@@ -71,11 +67,7 @@ public:
         unsigned int currentCounterValue;
         std::string msg;
 
-        unsigned short flag;
-        sem_wait(&timesem);
-        flag = *maxTime;
-        sem_post(&timesem);
-        while (!flag)
+        while (1)
         {
             /*go to sleep*/
             sleepRandom();
@@ -111,10 +103,6 @@ public:
             sem_wait(&filesem);
             *fout << msg;
             sem_post(&filesem);
-
-            sem_wait(&timesem);
-            flag = *maxTime;
-            sem_post(&timesem);
         }
         pthread_exit(nullptr);
     }
@@ -128,10 +116,9 @@ public:
 class MMonitor
 {
 public:
-    static sem_t buffersem, full, empty, semaphore, filesem, timesem;
+    static sem_t buffersem, full, empty, semaphore, filesem;
     static unsigned int *counter;
     static std::ofstream *fout;
-    static unsigned short *maxTime;
     static pthread_t tid;
     static std::queue<unsigned int> *buffer;
 
@@ -144,11 +131,7 @@ public:
         unsigned int currentCounterValue;
         std::string msg;
 
-        unsigned short flag;
-        sem_wait(&timesem);
-        flag = *maxTime;
-        sem_post(&timesem);
-        while (!flag)
+        while (1)
         {
             /*go to sleep*/
             sleepRandom();
@@ -180,118 +163,111 @@ public:
             sem_post(&filesem);
 
             /*append to buffer*/
-            sem_wait(&empty);
-            sem_wait(&buffersem);
-            buffer->push(currentCounterValue);
             msg = "";
-            msg = msg.append(
-                "Monitor thread : writing to buffer at position " + std::to_string(buffer->size() - 1) + "\n");
-            sem_post(&buffersem);
-            sem_post(&full);
+            if (buffer->size() < SIZE_OF_BUFFER)
+            {
+                sem_wait(&empty);
+                sem_wait(&buffersem);
 
+                buffer->push(currentCounterValue);
+                msg = msg.append(
+                    "Monitor thread : writing to buffer at position " + std::to_string(buffer->size() - 1) + "\n");
+                
+                sem_post(&buffersem);
+                sem_post(&full);
+            }
+            else
+            {
+                msg = msg.append(
+                    "Monitor thread : Buffer full!\n");
+            }
             sem_wait(&filesem);
             *fout << msg;
             sem_post(&filesem);
-
-            sem_wait(&timesem);
-            flag = *maxTime;
-            sem_post(&timesem);
         }
         pthread_exit(nullptr);
     }
 };
 
-struct collectorArgs
+class MCollector
 {
-    sem_t *buffersem, *full, *empty, *filesem, *timesem;
-    std::queue<unsigned int> *buffer;
-    unsigned short *maxTime;
-    std::ofstream *fout;
-};
+public:
+    static sem_t buffersem, full, empty, filesem;
+    static std::ofstream *fout;
+    static pthread_t tid;
+    static std::queue<unsigned int> *buffer;
 
-void *mCollector(void *argsptr)
-{
-    /*extracting arguments*/
-    const collectorArgs *args = (collectorArgs *)argsptr;
-
-    unsigned int bufferVal;
-    std::string msg = "";
-
-    unsigned short flag;
-    sem_wait(args->timesem);
-    flag = *args->maxTime;
-    sem_post(args->timesem);
-    while (!flag)
+    static void init()
     {
-        /*go to sleep*/
-        sleepRandom();
+        pthread_create(&tid, nullptr, MCollector::mCollector, nullptr);
+    }
+    static void *mCollector(void *garbage)
+    {
+        unsigned int bufferVal;
+        std::string msg;
 
-        /*consume*/
+        while (1)
+        {
+            /*go to sleep*/
+            sleepRandom();
 
-        sem_wait(args->full);
-        sem_wait(args->buffersem);
-        /*critical section*/ {
-            if (!args->buffer->empty())
+            /*append to buffer*/
+            msg = "";
+            if (buffer->empty())
             {
-                bufferVal = args->buffer->front();
-                args->buffer->pop();
-                msg = "Collector Thread: reading from the buffer at position 0\n";
+                msg = msg.append(
+                    "Collector thread : nothing is in the buffer!\n");
             }
             else
             {
-                msg = "Collector Thread: Nothing is in the buffer!\n";
+                sem_wait(&full);
+                sem_wait(&buffersem);
+
+                bufferVal = buffer->front();
+                buffer->pop();
+                msg = msg.append(
+                    "Collector thread : reading from the buffer at position 0 \n");
+
+                sem_post(&buffersem);
+                sem_post(&empty);
             }
-        } /*end critical section*/
-        sem_post(args->buffersem);
-        sem_post(args->empty);
 
-        sem_wait(args->filesem);
-        *args->fout << msg;
-        sem_post(args->filesem);
-
-        sem_wait(args->timesem);
-        flag = *args->maxTime;
-        sem_post(args->timesem);
+            sem_wait(&filesem);
+            *fout << msg;
+            sem_post(&filesem);
+        }
+        pthread_exit(nullptr);
     }
-    pthread_exit(nullptr);
-}
+};
 
+/*declaration of static members*/
+unsigned int  
+    *MCounters::counter,
+    *MMonitor::counter;
+sem_t
+    MCounters::filesem,
+    MMonitor::filesem, 
+    MCollector::filesem,
+    MCounters::semaphore, 
+    MMonitor::semaphore, 
+    MMonitor::buffersem, 
+    MCollector::buffersem,
+    MMonitor::empty, 
+    MCollector::empty,
+    MMonitor::full,
+    MCollector::full;
+std::ofstream 
+    *MCounters::fout,
+    *MMonitor::fout, 
+    *MCollector::fout;
 
-pthread_t initCollector(
-    sem_t *buffersem,
-    sem_t *full,
-    sem_t *empty,
-    std::queue<unsigned int> *buffer,
-    std::ofstream *fout,
-    unsigned short *maxTime,
-    sem_t *filesem,
-    sem_t *timesem)
-{
-    collectorArgs *args = new collectorArgs;
-    pthread_t tid;
-
-    /*setting the parameters*/
-    args->maxTime = maxTime;
-    args->buffer = buffer;
-    args->buffersem = buffersem;
-    args->empty = empty;
-    args->full = full;
-    args->fout = fout;
-    args->filesem = filesem;
-
-    pthread_create(&tid, nullptr, mCollector, &args);
-
-    return tid;
-}
-
-unsigned int *MCounters::counter, *MMonitor::counter;
-sem_t MCounters::filesem, MMonitor::filesem;
-sem_t MCounters::timesem, MMonitor::timesem;
-unsigned short *MCounters::maxTime , *MMonitor::maxTime;
-std::ofstream *MCounters::fout , *MMonitor::fout;
-sem_t MCounters::semaphore, MMonitor::semaphore, MMonitor::buffersem, MMonitor::empty, MMonitor::full;
-pthread_t MCounters::mCountertidArray[NO_OF_COUNTER_THREADS], MMonitor::tid;
-std::queue<unsigned int> * MMonitor::buffer;
+pthread_t 
+    MCounters::mCountertidArray[NO_OF_COUNTER_THREADS], 
+    MMonitor::tid,
+    MCollector::tid;
+std::queue<unsigned int> 
+    *MMonitor::buffer,
+    *MCollector::buffer;
 
 int main()
 {
@@ -310,56 +286,48 @@ int main()
     sem_t filesem;
     sem_init(&filesem, 0, 1);
 
-    sem_t timesem;
-    sem_init(&timesem, 0, 1);
-
     std::ofstream fout;
     fout.open("out.txt");
 
     unsigned int *count = new unsigned int;
     *count = 0;
 
-    unsigned short maxTime = 0;
-
     Timer timer;
 
     std::queue<unsigned int> buffer;
 
-    static MCounters mCounters;
-    static MMonitor  mMonitor;
+    MCounters mCounters;
+    MCollector mCollector;
+    MMonitor mMonitor;
 
-    MCounters::counter   = MMonitor::counter   = count;
-    MCounters::filesem   = MMonitor::filesem   = filesem;
-    MCounters::timesem   = MMonitor::timesem   = timesem;
-    MCounters::maxTime   = MMonitor::maxTime   = &maxTime;
-    MCounters::fout      = MMonitor::fout      = &fout;
-    MCounters::semaphore = MMonitor::semaphore = semaphore;
-    MMonitor::buffersem  = buffersem;
-    MMonitor::empty      = empty;
-    MMonitor::full       = full;
-    MMonitor::buffer     = &buffer;
+    MCounters::counter   = MMonitor::counter     = count;
+    MCounters::filesem   = MMonitor::filesem     = MCollector::filesem = filesem;
+    MCounters::fout      = MMonitor::fout        = MCollector::fout    = &fout;
+    MCounters::semaphore = MMonitor::semaphore   = semaphore;
+    MMonitor::buffersem  = MCollector::buffersem = buffersem;
+    MMonitor::empty      = MCollector::empty     = empty;
+    MMonitor::full       = MCollector::full      = full;
+    MMonitor::buffer     = MCollector::buffer    = &buffer;
 
     mCounters.init();
-    mMonitor .init();
-
-    // pthread_t monitorTid = initMonitor   (semaphore, count, fout, maxTime, buffer, buffersem, full, empty, filesem, timesem);
-
-    // pthread_t collectorTid = initCollector (buffersem, full, empty, buffer, fout, maxTime, filesem, timesem);
-
+    mCollector.init();
+    mMonitor.init();
+    
     /*monitor the running time*/
-    while (timer.getTimeElapsed() < MAX_RUN_TIME)
-        ;
-    sem_wait(&timesem);
-    maxTime = 1;
-    sem_post(&timesem);
+    while (timer.getTimeElapsed() < MAX_RUN_TIME);
 
     /*join threads*/
     for (int i = 0; i < NO_OF_COUNTER_THREADS; i++)
     {
+        pthread_cancel(MCounters::getmCountertidArray()[i]);
         pthread_join(MCounters::getmCountertidArray()[i], 0);
     }
-    pthread_join(MMonitor::tid,0);
-    // pthread_join(collectorTid,0);
+    
+    pthread_cancel(MMonitor::tid);
+    pthread_join(MMonitor::tid, 0);
+    
+    pthread_cancel(MCollector::tid);
+    pthread_join(MCollector::tid,0);
 
     /*cleanup*/
     fout.close();
@@ -369,7 +337,6 @@ int main()
     sem_destroy(&full);
     sem_destroy(&empty);
     sem_destroy(&filesem);
-    sem_destroy(&timesem);
 
     delete count;
 
