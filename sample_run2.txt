@@ -1,0 +1,64 @@
+Counter Thread 0 : recieved a message.
+Monitor Thread : waiting to read counter.
+Counter Thread 0 : waiting to write.
+Counter Thread 0 : now adding to counter,
+counter value = 1
+Monitor Thread : reading a count value of 0
+Monitor thread : writing to buffer at position 0
+Collector thread : nothing is in the buffer!
+Counter Thread 0 : recieved a message.
+Counter Thread 0 : waiting to write.
+Counter Thread 0 : now adding to counter,
+counter value = 2
+Collector thread : reading from the buffer at position 0 
+Counter Thread 0 : recieved a message.
+Counter Thread 0 : waiting to write.
+Counter Thread 0 : now adding to counter,
+counter value = 3
+Monitor Thread : waiting to read counter.
+Monitor Thread : reading a count value of 3
+Monitor thread : writing to buffer at position 0
+Collector thread : reading from the buffer at position 0 
+Counter Thread 0 : recieved a message.
+Counter Thread 0 : waiting to write.
+Counter Thread 0 : now adding to counter,
+counter value = 1
+Collector thread : nothing is in the buffer!
+Monitor Thread : waiting to read counter.
+Monitor Thread : reading a count value of 1
+Monitor thread : writing to buffer at position 0
+Counter Thread 0 : recieved a message.
+Counter Thread 0 : waiting to write.
+Counter Thread 0 : now adding to counter,
+counter value = 1
+Collector thread : reading from the buffer at position 0 
+Monitor Thread : waiting to read counter.
+Monitor Thread : reading a count value of 1
+Monitor thread : writing to buffer at position 0
+Counter Thread 0 : recieved a message.
+Counter Thread 0 : waiting to write.
+Counter Thread 0 : now adding to counter,
+counter value = 1
+Monitor Thread : waiting to read counter.
+Monitor Thread : reading a count value of 1
+Monitor thread : writing to buffer at position 1
+Collector thread : reading from the buffer at position 0 
+Collector thread : reading from the buffer at position 0 
+Monitor Thread : waiting to read counter.
+Monitor Thread : reading a count value of 0
+Monitor thread : writing to buffer at position 0
+Counter Thread 0 : recieved a message.
+Counter Thread 0 : waiting to write.
+Counter Thread 0 : now adding to counter,
+counter value = 1
+Collector thread : reading from the buffer at position 0 
+Counter Thread 0 : recieved a message.
+Counter Thread 0 : waiting to write.
+Counter Thread 0 : now adding to counter,
+counter value = 2
+Monitor Thread : waiting to read counter.
+Monitor Thread : reading a count value of 2
+Monitor thread : writing to buffer at position 0
+Collector thread : reading from the buffer at position 0 
+Collector thread : nothing is in the buffer!
+Collector thread : nothing is in the buffer!
