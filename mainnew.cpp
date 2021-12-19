@@ -5,10 +5,10 @@
 #include <semaphore.h>
 #include <fstream>
 
-#define MAX_SLEEP_TIME 1
-#define MAX_RUN_TIME 1
+#define MAX_SLEEP_TIME 10
+#define MAX_RUN_TIME 100
 #define SIZE_OF_BUFFER 100
-#define NO_OF_COUNTER_THREADS 1
+#define NO_OF_COUNTER_THREADS 10
 
 /*to time any function*/
 class Timer
