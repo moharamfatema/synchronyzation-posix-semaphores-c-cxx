@@ -226,7 +226,7 @@ public:
     }
     static void *mCollector(void *garbage)
     {
-        unsigned int bufferVal;
+        unsigned int bufferVal = 0;
         std::string msg;
         u_short emptyFlag;
         while (1)
@@ -253,7 +253,7 @@ public:
                 sem_post(empty);
 
                 msg = msg.append(
-                    "Collector thread : reading from the buffer at position 0 \n");
+                    "Collector thread : reading from the buffer at position 0 a value of "+std::to_string(bufferVal)+ "\n");
 
             }
             else
